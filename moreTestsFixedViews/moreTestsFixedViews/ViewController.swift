@@ -14,6 +14,7 @@ class ViewController: UIViewController, PKCanvasViewDelegate {
     @IBOutlet weak var imageView: UIImageView!
     
     var layers: [PKDrawing] = []
+    var shouldUpdateLayers: Bool = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -35,16 +36,19 @@ class ViewController: UIViewController, PKCanvasViewDelegate {
         canvasView.tool = PKInkingTool(.pen, color: .black, width: 15)
     }
     
-    // This method is called when the user is about to start a new stroke.
-    func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
-        // When a new stroke begins, if there's a drawing from the previous stroke, we add it to the layer stack and clear the canvas.
-        if !canvasView.drawing.bounds.isEmpty {
+    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+        shouldUpdateLayers = true
+    }
+    
+    func canvasViewDidFinishRendering(_ canvasView: PKCanvasView) {
+        if shouldUpdateLayers && !canvasView.drawing.bounds.isEmpty {
             layers.insert(canvasView.drawing, at: 0)
             canvasView.drawing = PKDrawing()
+            
+            imageView.image = compositeLayers()
+            
+            shouldUpdateLayers = false
         }
-        
-        // We then composite our layers onto the imageView.
-        imageView.image = compositeLayers()
     }
     
     func compositeLayers() -> UIImage {
@@ -52,7 +56,7 @@ class ViewController: UIViewController, PKCanvasViewDelegate {
         
         for (index, layer) in layers.enumerated() {
             let alpha = CGFloat(1 - 0.05 * Double(index))
-            let layerImage = layer.image(from: layer.bounds, scale: 1).withAlpha(alpha)
+            let layerImage = layer.image(from: canvasView.bounds, scale: 1).withAlpha(alpha)
             
             if let currentImage = image {
                 UIGraphicsBeginImageContext(currentImage.size)
