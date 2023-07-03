@@ -6,83 +6,116 @@
 //
 
 import UIKit
-import PencilKit
 
-class ViewController: UIViewController, PKCanvasViewDelegate {
-    
-    @IBOutlet weak var canvasView: PKCanvasView!
+class ViewController: UIViewController {
+
     @IBOutlet weak var imageView: UIImageView!
-    
-    var layers: [PKDrawing] = []
-    var shouldUpdateLayers: Bool = false
-    
+
+    var layers: [UIImage] = []
+    var currentLayer: UIImage?
+    var lastPoint = CGPoint.zero
+    var color = UIColor.black
+    var brushWidth: CGFloat = 15.0
+    var opacity: CGFloat = 1.0
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        canvasView.backgroundColor = .clear
-        canvasView.delegate = self
-        canvasView.tool = PKInkingTool(.pen, color: .black, width: 15)
-        canvasView.drawingPolicy = .anyInput
-        canvasView.becomeFirstResponder()
-        
+
         imageView.backgroundColor = .gray
+
+        // Initialize the current layer
+        currentLayer = blankImage()
     }
-    
-    @IBAction func eraser(_ sender: Any) {
-        canvasView.tool = PKEraserTool(.vector)
+
+    // Returns a blank image
+    func blankImage() -> UIImage {
+        UIGraphicsBeginImageContext(imageView.frame.size)
+        let image = UIGraphicsGetImageFromCurrentImageContext() ?? UIImage()
+        UIGraphicsEndImageContext()
+        return image
     }
-    
-    @IBAction func pencil(_ sender: Any) {
-        canvasView.tool = PKInkingTool(.pen, color: .black, width: 15)
+
+    // Handles the start of a touch
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        lastPoint = touches.first?.location(in: imageView) ?? CGPoint.zero
     }
-    
-    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
-        shouldUpdateLayers = true
+
+    // Handles the movement of a touch
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+
+        let currentPoint = touch.location(in: imageView)
+
+        drawLine(from: lastPoint, to: currentPoint)
+
+        lastPoint = currentPoint
     }
-    
-    func canvasViewDidFinishRendering(_ canvasView: PKCanvasView) {
-        if shouldUpdateLayers && !canvasView.drawing.bounds.isEmpty {
-            layers.insert(canvasView.drawing, at: 0)
-            canvasView.drawing = PKDrawing()
-            
-            imageView.image = compositeLayers()
-            
-            shouldUpdateLayers = false
+
+    // Handles the end of a touch
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let currentLayer = currentLayer {
+            layers.append(currentLayer)
         }
+        currentLayer = blankImage()
+        updateLayers()
     }
-    
-    func compositeLayers() -> UIImage {
-        var image: UIImage?
-        
-        for (index, layer) in layers.enumerated() {
+
+    // Draws a line from one point to another
+    func drawLine(from fromPoint: CGPoint, to toPoint: CGPoint) {
+        UIGraphicsBeginImageContext(imageView.frame.size)
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+
+        currentLayer?.draw(in: imageView.bounds)
+
+        context.move(to: fromPoint)
+        context.addLine(to: toPoint)
+
+        context.setLineCap(.round)
+        context.setBlendMode(.normal)
+        context.setLineWidth(brushWidth)
+        context.setStrokeColor(color.cgColor)
+
+        context.strokePath()
+
+        currentLayer = UIGraphicsGetImageFromCurrentImageContext()
+        imageView.image = currentLayer
+
+        UIGraphicsEndImageContext()
+    }
+
+    // Updates the opacity of each layer
+    func updateLayers() {
+        UIGraphicsBeginImageContext(imageView.frame.size)
+
+        var layersToRemove = [UIImage]()
+        for (index, layer) in layers.reversed().enumerated() {
             let alpha = CGFloat(1 - 0.05 * Double(index))
-            let layerImage = layer.image(from: canvasView.bounds, scale: 1).withAlpha(alpha)
-            
-            if let currentImage = image {
-                UIGraphicsBeginImageContext(currentImage.size)
-                
-                currentImage.draw(at: .zero)
-                layerImage.draw(at: .zero)
-                
-                image = UIGraphicsGetImageFromCurrentImageContext()
-                
-                UIGraphicsEndImageContext()
+            if alpha <= 0 {
+                layersToRemove.append(layer)
             } else {
-                image = layerImage
+                layer.withAlpha(alpha)?.draw(in: imageView.bounds)
             }
         }
-        
-        return image ?? UIImage()
+
+        // Remove any layers that have become fully transparent
+        layers.removeAll(where: { layersToRemove.contains($0) })
+
+        imageView.image = UIGraphicsGetImageFromCurrentImageContext()
+
+        UIGraphicsEndImageContext()
     }
+
+
 }
 
 extension UIImage {
-    func withAlpha(_ alpha: CGFloat) -> UIImage {
+    // Returns a copy of the image with a specific alpha
+    func withAlpha(_ alpha: CGFloat) -> UIImage? {
         UIGraphicsBeginImageContextWithOptions(size, false, scale)
         draw(at: .zero, blendMode: .normal, alpha: alpha)
         let newImage = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-        return newImage ?? self
+        return newImage
     }
 }
 
